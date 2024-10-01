@@ -1,0 +1,17 @@
+[package]
+name = "rustychat_backend"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = "0.24.0"
+futures-util = "0.3.30"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.128"
+deadpool-postgres = "0.14.0"
+argon2 = "0.5.3"
+tokio-postgres = "0.7.12"
+rand = "0.8.5"
+password-hash = "0.5.0"
+anyhow = "1.0.89"
