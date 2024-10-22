@@ -1,17 +1,22 @@
-use deadpool_postgres::Pool;
+// src/friend_list.rs
 use futures_util::{stream::SplitSink, SinkExt};
 use tokio::net::TcpStream;
 use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
 use std::time::SystemTime;
-
+use crate::check_token::check_token;
 use crate::types::{FriendListItem, Response};
 
 pub async fn handle_friendlist_request(
     user_id: i32,
+    access_token_for_check: &str,
     write: &mut SplitSink<WebSocketStream<TcpStream>, Message>,
-    pool: &Pool,
+    pool_pg: &deadpool_postgres::Pool,
+    pool_redis: &deadpool_redis::Pool,
 ) {
-    match get_friend_list(user_id, &pool).await {
+    if !check_token(user_id, access_token_for_check, &pool_redis, write).await {
+        return;
+    }
+    match get_friend_list(user_id, &pool_pg).await {
         Ok(list) => {
             let success_response = Response::FriendListResponse {
                 status: "success".to_string(),
@@ -39,7 +44,7 @@ pub async fn handle_friendlist_request(
     }
 }
 
-async fn get_friend_list(user_id: i32, pool: &Pool) -> Result<Vec<FriendListItem>, String> {
+async fn get_friend_list(user_id: i32, pool: &deadpool_postgres::Pool) -> Result<Vec<FriendListItem>, String> {
     let client = pool
         .get()
         .await

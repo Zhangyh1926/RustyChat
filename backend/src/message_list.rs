@@ -1,19 +1,24 @@
+// src/message_list.rs
 use std::time::SystemTime;
 
-use deadpool_postgres::Pool;
 use futures_util::{stream::SplitSink, SinkExt};
 use tokio::net::TcpStream;
 use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
-
+use crate::check_token::check_token;
 use crate::types::{MessageListItem, Response};
 
 pub async fn handle_message_list_request(
     user_id: i32,
+    access_token_for_check: &str,
     another_user_id: i32,
     write: &mut SplitSink<WebSocketStream<TcpStream>, Message>,
-    pool: &Pool,
+    pool_pg: &deadpool_postgres::Pool,
+    pool_redis: &deadpool_redis::Pool,
 ) {
-    match get_message_list(user_id, another_user_id, &pool).await {
+    if !check_token(user_id, access_token_for_check, &pool_redis, write).await {
+        return;
+    }
+    match get_message_list(user_id, another_user_id, &pool_pg).await {
         Ok(list) => {
             let success_response = Response::MessageListResponse { 
                 status: "success".to_string(),
@@ -22,7 +27,7 @@ pub async fn handle_message_list_request(
             };
             let response_text = serde_json::to_string(&success_response).unwrap();
             write
-                .send(tokio_tungstenite::tungstenite::Message::Text(response_text))
+                .send(Message::Text(response_text))
                 .await
                 .unwrap();
         }
@@ -34,14 +39,14 @@ pub async fn handle_message_list_request(
             };
             let response_text = serde_json::to_string(&fail_response).unwrap();
             write
-                .send(tokio_tungstenite::tungstenite::Message::Text(response_text))
+                .send(Message::Text(response_text))
                 .await
                 .unwrap();
         }
     }
 }
 
-async fn get_message_list(user_id: i32, another_user_id: i32, pool: &Pool) -> Result<Vec<MessageListItem>, String> {
+async fn get_message_list(user_id: i32, another_user_id: i32, pool: &deadpool_postgres::Pool) -> Result<Vec<MessageListItem>, String> {
     let client = pool
         .get()
         .await

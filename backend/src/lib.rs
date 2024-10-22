@@ -5,13 +5,14 @@ mod login;
 mod message_list;
 mod message_push;
 mod types;
+mod register;
+mod friend_center;
+mod heartbeat;
+mod check_token;
+mod ws_err_utils;
+mod refresh_token;
 
-use anyhow::Result;
-use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
-    Argon2,
-};
-use deadpool_postgres::Pool;
+use crate::register::handle_register_request;
 use futures_util::{stream::StreamExt, SinkExt};
 use std::sync::Arc;
 use types::{Request, Response};
@@ -19,7 +20,8 @@ use types::{Request, Response};
 pub async fn handle_connection(
     peer: std::net::SocketAddr,
     ws_stream: tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
-    pool: Arc<Pool>,
+    pool_pg: Arc<deadpool_postgres::Pool>,
+    pool_redis: Arc<deadpool_redis::Pool>,
 ) {
     println!("New WebSocket connection from: {}", peer);
 
@@ -34,10 +36,9 @@ pub async fn handle_connection(
                 let request: Request = match serde_json::from_str(msg_text) {
                     Ok(req) => req,
                     Err(_) => {
-                        let error_response = Response::LoginResponse {
+                        let error_response = Response::GenericResponse {
                             status: "error".to_string(),
                             message: "Invalid JSON format".to_string(),
-                            id: None,
                         };
                         let response_text = serde_json::to_string(&error_response).unwrap();
                         println!("Invalid JSON format");
@@ -51,68 +52,71 @@ pub async fn handle_connection(
 
                 match request {
                     Request::LoginRequest {
-                        username: _,
-                        password: _,
+                        username, password, ..
                     } => {
-                        login::handle_login(&request, &mut write, &pool).await;
+                        login::handle_login(&username, &password, &mut write, &pool_pg, &pool_redis).await;
                     }
-                    Request::FriendListRequest { userid } => {
-                        friend_list::handle_friendlist_request(userid, &mut write, &pool).await;
+                    Request::FriendListRequest { user_id_for_check, access_token_for_check } => {
+                        friend_list::handle_friendlist_request(user_id_for_check, &access_token_for_check, &mut write, &pool_pg, &pool_redis).await;
                     }
                     Request::MessageListRequest {
-                        my_userid,
-                        other_userid,
+                        other_userid, user_id_for_check, access_token_for_check
                     } => {
                         message_list::handle_message_list_request(
-                            my_userid,
+                            user_id_for_check,
+                            &access_token_for_check,
                             other_userid,
                             &mut write,
-                            &pool,
+                            &pool_pg,
+                            &pool_redis,
                         )
                         .await;
                     }
-
-                    _ => {
-                        let error_response = Response::LoginResponse {
-                            status: "error".to_string(),
-                            message: "Invalid message type".to_string(),
-                            id: None,
-                        };
-                        let response_text = serde_json::to_string(&error_response).unwrap();
-                        write
-                            .send(tokio_tungstenite::tungstenite::Message::Text(response_text))
-                            .await
-                            .unwrap();
+                    Request::MessagePushRequest {
+                        receiver_id,
+                        message,
+                        user_id_for_check,
+                        access_token_for_check,
+                    } => {
+                        message_push::handle_message_push_request(
+                            user_id_for_check,
+                            &access_token_for_check,
+                            receiver_id,
+                            &message,
+                            &mut write,
+                            &pool_pg,
+                            &pool_redis,
+                        )
+                        .await;
                     }
+                    Request::RegisterRequest {
+                        username,
+                        password,..
+                    } => {
+                        handle_register_request(&username, &password, &mut write, &pool_pg).await;
+                    }
+                    Request::FriendCenterRequest { user_id_for_check, access_token_for_check} => {
+                        friend_center::handle_friend_center_request(
+                            user_id_for_check,
+                            &access_token_for_check,
+                            &mut write,
+                            &pool_pg,
+                            &pool_redis,
+                        )
+                        .await;
+                    }
+                    Request::HeartbeatRequest { user_id_for_check, access_token_for_check } => {
+                        heartbeat::handle_heartbeat_request(
+                            user_id_for_check,
+                            &access_token_for_check,
+                            &mut write,
+                            &pool_redis,
+                        )
+                        .await;
+                    }   
                 }
             }
         }
     }
 }
 
-pub async fn register_user(username: &str, password: &str, pool: &Pool) -> Result<()> {
-    let client = pool.get().await.unwrap();
-    let stmt = client
-        .prepare("INSERT INTO users (username, password_hash, salt) VALUES ($1, $2, $3)")
-        .await?;
-
-    // 使用 argon2 加密密码
-    let salt = SaltString::generate(&mut OsRng);
-
-    // Argon2 with default params (Argon2id v19)
-    let argon2 = Argon2::default();
-
-    // Hash password to PHC string ($argon2id$v=19$...)
-    let password = password.as_bytes();
-    let password_hash = match argon2.hash_password(password, &salt) {
-        Ok(hash) => hash.to_string(),
-        Err(e) => return Err(anyhow::anyhow!(e)),
-    };
-    let salt: String = salt.to_string();
-
-    client
-        .execute(&stmt, &[&username, &password_hash, &salt])
-        .await?;
-
-    Ok(())
-}
