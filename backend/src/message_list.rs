@@ -15,7 +15,7 @@ pub async fn handle_message_list_request(
     pool_pg: &deadpool_postgres::Pool,
     pool_redis: &deadpool_redis::Pool,
 ) {
-    if !check_token(user_id, access_token_for_check, &pool_redis, write).await {
+    if !check_token("MessageListResponse", user_id, access_token_for_check, &pool_redis, write).await {
         return;
     }
     match get_message_list(user_id, another_user_id, &pool_pg).await {
@@ -50,7 +50,7 @@ async fn get_message_list(user_id: i32, another_user_id: i32, pool: &deadpool_po
     let client = pool
         .get()
         .await
-        .map_err(|_| "Failed to connect to database".to_string())?;
+        .map_err(|_| "Failed to connect to pg database".to_string())?;
     let stmt = client
         .prepare(
             "SELECT 

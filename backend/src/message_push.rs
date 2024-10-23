@@ -16,16 +16,14 @@ pub async fn handle_message_push_request(
     pool_pg: &deadpool_postgres::Pool,
     pool_redis: &deadpool_redis::Pool,
 ) {
-    if !check_token(sender_id, access_token_for_check, &pool_redis, write).await {
+    if !check_token("MessagePushResponse", sender_id, access_token_for_check, &pool_redis, write).await {
         return;
     }
     match push_messages(sender_id, receiver_id, message, &pool_pg).await {
-        Ok((time, id)) => {
+        Ok((_, _)) => {
             let success_response = Response::MessagePushResponse {
                 status: "success".to_string(),
                 message: "push message successful".to_string(),
-                timestamp: Some(time),
-                id: Some(id),
             };
             let response_text = serde_json::to_string(&success_response).unwrap();
             write
@@ -37,8 +35,6 @@ pub async fn handle_message_push_request(
             let fail_response = Response::MessagePushResponse {
                 status: "error".to_string(),
                 message: err_msg,
-                timestamp: None,
-                id: None,
             };
             let response_text = serde_json::to_string(&fail_response).unwrap();
             write
@@ -53,7 +49,7 @@ async fn push_messages(sender_id: i32, receiver_id: i32, message: &str, pool: &d
     let client = pool
         .get()
         .await
-        .map_err(|_| "Failed to connect to database".to_string())?;
+        .map_err(|_| "Failed to connect to pg database".to_string())?;
     let stmt = client
         .prepare(
             "INSERT INTO messages(sender_id, receiver_id, message) VALUES($1, $2, $3) RETURNING timestamp, id;"

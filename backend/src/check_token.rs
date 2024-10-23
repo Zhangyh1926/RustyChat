@@ -6,6 +6,7 @@ use tokio_tungstenite::WebSocketStream;
 use crate::ws_err_utils::write_err_msg_to_ws;
 
 pub async fn check_token(
+    response_type: &'static str,
     user_id_for_check: i32,
     access_token_for_check: &str,
     pool_redis: &deadpool_redis::Pool,
@@ -14,11 +15,11 @@ pub async fn check_token(
     let mut redis_connection = pool_redis
         .get()
         .await
-        .map_err(|_| "Failed to connect to database".to_string());
+        .map_err(|_| "Failed to connect to pg database".to_string());
     let redis_connection = match redis_connection {
         Ok(ref mut redis_connection) => redis_connection,
         Err(_) => {
-            write_err_msg_to_ws(write, "Failed to connect to database").await;
+            write_err_msg_to_ws(response_type, write, "Failed to connect to redis database").await;
             return false;
         }
     };
@@ -27,7 +28,7 @@ pub async fn check_token(
     if access_token == access_token_for_check {
         true
     } else {
-        write_err_msg_to_ws(write, "Invalid access token").await;
+        write_err_msg_to_ws(response_type, write, "Invalid access token").await;
         false
     }
 }

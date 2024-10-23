@@ -34,17 +34,43 @@ request_with_auth! {
     RefreshTokenRequest { refresh_token: String },
 }
 
+macro_rules! response_with_message {
+    (
+        $( $name:ident { $( $field:ident : $type:ty ),* $(,)? } ),* $(,)? 
+    ) => {
+        #[derive(Serialize, Deserialize, Debug)]
+        #[serde(tag = "messageType")]
+        pub enum Response {
+            $(
+                $name {
+                    status: String,
+                    message: String,
+                    $( $field: $type ),* // 允许没有字段
+                }
+            ),*
+        }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(tag = "messageType")]
-pub enum Response {
-    GenericResponse {
-        status: String,
-        message: String,
-    },
+        impl Response {
+            pub fn new(name: &'static str, status: String, message: String) -> Self {
+                match name {
+                    $( stringify!($name) => {
+                        Response::$name {
+                            status,
+                            message,
+                            $( $field: None ),* // 允许没有字段
+                        }
+                    }, )*
+                    _ => panic!("Unknown response type"),
+                }
+            }
+        }
+    };
+}
+
+// 定义响应类型
+response_with_message! {
+    GenericResponse {},
     LoginResponse {
-        status: String,
-        message: String,
         id: Option<i32>,
         access_token: Option<String>,
         refresh_token: Option<String>,
@@ -52,35 +78,25 @@ pub enum Response {
         refresh_token_expire: Option<SystemTime>,
     },
     FriendListResponse {
-        status: String,
-        message: String,
         friends: Option<Vec<FriendListItem>>,
     },
     MessageListResponse {
-        status: String,
-        message: String,
         messages: Option<Vec<MessageListItem>>,
     },
-    MessagePushResponse {
-        status: String,
-        message: String,
-        timestamp: Option<SystemTime>, // 返回消息的时间戳
-        id: Option<i32>, // 返回消息的id
-    },
+    MessagePushResponse {},
     RegisterResponse {
-        status: String,
-        message: String,
         id: Option<i32>,
     },
     FriendCenterResponse {
-        status: String,
-        message: String,
         friends: Option<Vec<FriendCenterItem>>,
     },
-    HeartbeatResponse {
-        status: String,
-        message: String,
-    }
+    HeartbeatResponse {},
+    RefreshTokenResponse {
+        access_token: Option<String>,
+        refresh_token: Option<String>,
+        access_token_expire: Option<SystemTime>,
+        refresh_token_expire: Option<SystemTime>,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -1,9 +1,9 @@
 import { loginStateStore } from "@/stores/loginState";
 import { he, ro } from "element-plus/es/locales.mjs";
 import { convertEpochToDate } from "./convertEpochToDate";
-import { useRouter } from "vue-router";
 import { showAlert } from "./alert";
 import { getActivePinia } from "pinia";
+import { Router } from "vue-router";
 
 // src/utils/ws.ts
 let ws: WebSocket | null = null;
@@ -12,9 +12,10 @@ const listeners: { [key: string]: Function[] } = {};
 const heartbeatInterval = 30000; // 心跳间隔, 30s
 let heartbeatTimer: number | null = null; // 心跳定时器
 
-const router = useRouter();
 
 export const connectWebSocket = (url: string): Promise<void> => {
+    console.log("Router instance:");
+
     return new Promise((resolve, reject) => {
         try {
             ws = new WebSocket(url);
@@ -58,6 +59,7 @@ export const connectWebSocket = (url: string): Promise<void> => {
 };
 
 export const sendMessage = (message: any, resended: boolean = false) => {
+
     if (!ws) {
         console.error("WebSocket is not initialized");
         return new Error("WebSocket is not initialized");
@@ -78,7 +80,7 @@ export const sendMessage = (message: any, resended: boolean = false) => {
         let refresh_token_expire = convertEpochToDate(loginState.refresh_token_expire);
         if (now > refresh_token_expire) {
             console.error("Refresh token expired");
-            router.push("/login");
+            window.location.href = "/login";
         }
 
         // 如果 access_token 过期，刷新 token
@@ -86,7 +88,7 @@ export const sendMessage = (message: any, resended: boolean = false) => {
         if (now > access_token_expire) {
             if (resended) {
                 console.error("Access token expired");
-                router.push("/login");
+                window.location.href = "/login";
             }
 
             console.error("Access token expired");
@@ -94,8 +96,11 @@ export const sendMessage = (message: any, resended: boolean = false) => {
                 if (response.status === 'success') {
                     loginState.setTokens(response.access_token, response.refresh_token, response.access_token_expire, response.refresh_token_expire);
                     console.log("Token refreshed");
+                    // 刷新浏览器
+                    window.location.reload();
                 } else {
                     showAlert(response.message);
+                    window.location.href = "/login";
                     return;
                 }
             });
@@ -136,7 +141,7 @@ const notifyListeners = (data: any) => {
 const startHeartbeat = () => {
     heartbeatTimer = window.setInterval(() => {
         if (ws && ws.readyState === WebSocket.OPEN) {
-            sendMessage({ messageType: "heartbeat" });
+            sendMessage({ messageType: "HeartbeatRequest" });
         };
         console.log("Heartbeat sent");
     }, heartbeatInterval);

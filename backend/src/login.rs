@@ -11,8 +11,8 @@ use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
 use crate::types::Response;
 use crate::ws_err_utils::write_err_msg_to_ws;
 
-const ACCESS_TOKEN_EXPIRATION_TIME: u64 = 60 * 60; // 1 hour
-const REFRESH_TOKEN_EXPIRATION_TIME: u64 = 60 * 60 * 24 * 7; // 7 days
+pub const ACCESS_TOKEN_EXPIRATION_TIME: u64 = 60 * 60; // 1 hour
+pub const REFRESH_TOKEN_EXPIRATION_TIME: u64 = 60 * 60 * 24 * 7; // 7 days
 
 pub async fn handle_login(
     username: &str,
@@ -25,15 +25,17 @@ pub async fn handle_login(
         Ok(id) => {
             // 生成 token, uuid
             let access_token = uuid::Uuid::new_v4().to_string();
+            println!("access_token: {}", access_token);
             let refresh_token = uuid::Uuid::new_v4().to_string();
+            println!("refresh_token: {}", refresh_token);
             let mut redis_connection = pool_redis
                 .get()
                 .await
-                .map_err(|_| "Failed to connect to database");
+                .map_err(|_| "Failed to connect to redis database");
             let redis_connection = match redis_connection {
                 Ok(ref mut redis_connection) => redis_connection,
                 Err(msg) => {
-                    write_err_msg_to_ws(write, msg).await;
+                    write_err_msg_to_ws("LoginResponse", write, msg).await;
                     return;
                 }
             };
@@ -49,13 +51,13 @@ pub async fn handle_login(
             {
                 Ok(_) => {}
                 Err(_) => {
-                    write_err_msg_to_ws(write, "Failed to set access token").await;
+                    write_err_msg_to_ws("LoginResponse", write, "Failed to set access token").await;
                     return;
                 }
             };
             match cmd("SET")
                 .arg(&[
-                    "access_token_".to_string() + id.to_string().as_str(),
+                    "refresh_token_".to_string() + id.to_string().as_str(),
                     refresh_token.clone(),
                     "EX".to_string(),
                     REFRESH_TOKEN_EXPIRATION_TIME.to_string(),
@@ -65,7 +67,7 @@ pub async fn handle_login(
             {
                 Ok(_) => {}
                 Err(_) => {
-                    write_err_msg_to_ws(write, "Failed to set access token").await;
+                    write_err_msg_to_ws("LoginResponse", write, "Failed to set access token").await;
                     return;
                 }
             };
@@ -77,18 +79,18 @@ pub async fn handle_login(
                 access_token: Some(access_token),
                 refresh_token: Some(refresh_token),
                 access_token_expire: Some(
-                    SystemTime::now().add(Duration::from_secs(ACCESS_TOKEN_EXPIRATION_TIME as u64)),
+                    SystemTime::now().add(Duration::from_secs((ACCESS_TOKEN_EXPIRATION_TIME - 5) as u64)), // 5秒钟的缓冲时间
                 ),
                 refresh_token_expire: Some(
                     SystemTime::now()
-                        .add(Duration::from_secs(REFRESH_TOKEN_EXPIRATION_TIME as u64)),
+                        .add(Duration::from_secs((REFRESH_TOKEN_EXPIRATION_TIME - 5) as u64)), // 5秒钟的缓冲时间
                 ),
             };
             let response_text = serde_json::to_string(&success_response).unwrap();
             write.send(Message::Text(response_text)).await.unwrap();
         }
         Err(err_msg) => {
-            write_err_msg_to_ws(write, &err_msg).await;
+            write_err_msg_to_ws("LoginResponse", write, &err_msg).await;
         }
     }
 }
@@ -102,7 +104,7 @@ async fn authenticate_user(
     let client = pool
         .get()
         .await
-        .map_err(|_| "Failed to connect to database".to_string())?;
+        .map_err(|_| "Failed to connect to pg database".to_string())?;
     let stmt = client
         .prepare("SELECT password_hash, salt, id FROM users WHERE username = $1")
         .await

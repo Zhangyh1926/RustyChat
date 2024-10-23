@@ -114,6 +114,9 @@ pub async fn handle_connection(
                         )
                         .await;
                     }   
+                    Request::RefreshTokenRequest { refresh_token, user_id_for_check, .. } => {
+                        refresh_token::handle_refresh_token_request(user_id_for_check, &refresh_token, &mut write, &pool_redis).await;
+                    }
                 }
             }
         }

@@ -13,7 +13,7 @@ pub async fn handle_friendlist_request(
     pool_pg: &deadpool_postgres::Pool,
     pool_redis: &deadpool_redis::Pool,
 ) {
-    if !check_token(user_id, access_token_for_check, &pool_redis, write).await {
+    if !check_token("FriendListResponse", user_id, access_token_for_check, &pool_redis, write).await {
         return;
     }
     match get_friend_list(user_id, &pool_pg).await {
@@ -48,7 +48,7 @@ async fn get_friend_list(user_id: i32, pool: &deadpool_postgres::Pool) -> Result
     let client = pool
         .get()
         .await
-        .map_err(|_| "Failed to connect to database".to_string())?;
+        .map_err(|_| "Failed to connect to pg database".to_string())?;
     let stmt = client
         .prepare(
             "SELECT 

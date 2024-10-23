@@ -46,10 +46,12 @@
   import { formatLastMessageTime } from './timeFormatter';
   import { convertEpochToDate } from '@/utils/convertEpochToDate';
   import { MessagePushResponse } from '../utils/types';
+import { useRouter } from 'vue-router';
 
   const props = defineProps<{ userid: number; selectedFriend: FriendInList | null }>();
   const newMessage = ref('');
   const loginState = loginStateStore();
+  const router = useRouter();
 
   const messages = ref<Message[]>([]);
 
